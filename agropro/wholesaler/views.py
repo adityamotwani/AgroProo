@@ -1,26 +1,24 @@
 from django.shortcuts import render,redirect
 from django.apps import apps
 import math
+
+from wholesaler.serializers import CropSerializer,WholesalerSerializer
 Farmer = apps.get_model('home', 'Farmer')
 Wholesaler = apps.get_model('home', 'Wholesaler')
 Crop = apps.get_model('home', 'Crop')
 Notification = apps.get_model('home', 'Notification')
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 
 # Create your views here.
+@api_view(['GET'])
 def market(request):
-    if request.user.is_authenticated:
-        
+    permission_classes = (IsAuthenticated,)
+    try:    
         utype=request.user.username
         utype=utype[utype.rfind('-')+1:]
-        if request.method =="POST":
-            # print("Hemlo                                       ***************              ",request.user.username[:request.user.username.rfind('-')])
-            wh_ob=list(Wholesaler.objects.filter(username=request.user.username))[0]
-            c_id=request.POST["id"]
-            crop_obj=list(Crop.objects.filter(id=c_id))[0]
-            notif=Notification(crop=crop_obj,wholesaler=wh_ob,accepted=False,interested=True)
-            notif.save()
-
-
         qr=list(Crop.objects.all())
         # print (crops)
         crops=[]
@@ -132,16 +130,37 @@ def market(request):
             if i%3==0:
                 finalcrops.append([])
             finalcrops[-1].append(crops[i])
-
+        print("No problem 1")
         
-        context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')],"result":crops,'n':len(crops),"filter":f,"r":range(len(crops))}
-        return render(request,'market.html',context)
-    else:
-        return redirect('/login')
-    
+        context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')],"result":crops,'n':len(crops),"filter":f}
+        print("No problem 2")
+        
+        return Response({"success": True, "data": context}, status=status.HTTP_200_OK)
+        # return render(request,'market.html',context)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+        # return redirect('/login')
 
+
+@api_view(['POST'])
+def sendNotif(request):
+    permission_classes = (IsAuthenticated,)
+    try:    
+        utype=request.user.username
+        utype=utype[utype.rfind('-')+1:]
+        wh_ob=list(Wholesaler.objects.filter(username=request.user.username))[0]
+        c_id=request.data.get("id")
+        crop_obj=list(Crop.objects.filter(id=c_id))[0]
+        notif=Notification(crop=crop_obj,wholesaler=wh_ob,accepted=False,interested=True)
+        notif.save()
+        return Response({"success": True}, status=status.HTTP_200_OK)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+    
+@api_view(['GET'])
 def notification(request):
-    if request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         utype=request.user.username
         utype=utype[utype.rfind('-')+1:]
 
@@ -159,7 +178,7 @@ def notification(request):
         print(notif_final)
 
         # Order By
-        ob=request.GET.get('orderby')
+        ob=request.data.get('orderby')
         if ob=="Pending":
             notif_final=sorted(notif_final, key=lambda x: x[3])
         if ob=="Accepted":
@@ -169,43 +188,49 @@ def notification(request):
         print("Sorted List: ******",notif_final)
 
         context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')],"notif":notif_final,"n":4}
-        return render(request,'notif.html',context)
-    else:
-        return redirect('/login')
-    
+        # return render(request,'notif.html',context)
+        return Response({"success": True, "data": context}, status=status.HTTP_200_OK)
+    except:
+        # return redirect('/login')
+        return Response({"success": False}, status=status.HTTP_200_OK)
 
+@api_view(['GET'])
 def profile(request):
-    if request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         username=request.user.username
         username=username[:username.rfind('-')]
         # context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')+1]}
         print(username,"Ho raha hai")
-        instance = Wholesaler.objects.filter(username = request.user.username).values()[0]
+        print(WholesalerSerializer(Wholesaler.objects.get(username = request.user.username)))
+        instance = WholesalerSerializer(Wholesaler.objects.filter(username = request.user.username).values()[0])
         # crops = Crop.objects.filter(whole = instance['id'],available = True).values()
         
         print("The instance is:",instance)
         # print("The crop instance  is:",crops)
         context = {
-            'instance':instance,
+            'instance':instance.data,
             'username': username
             # 'crops':crops
         }
+        return Response({"success": True, "data": context}, status=status.HTTP_200_OK)
+        # return render(request,'profileWhole.html',context = context)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+        # return redirect('/')
 
-        return render(request,'profileWhole.html',context = context)
-    else:
-        return redirect('/')
-
-
+@api_view(['PATCH'])
 def editProfile(request):
-    if request.method == 'POST' and request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         username=request.user.username
         username=username[:username.rfind('-')]
         # context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')+1]}
         print(username,"Ho raha hai")
-        instance = Wholesaler.objects.filter(username = request.user.username).update(name = request.POST['name'],state = request.POST['state'],email = request.POST['email'],address = request.POST['address'],phone = request.POST['phone'])
+        instance = Wholesaler.objects.filter(username = request.user.username).update(name = request.data.get('name'),state = request.data.get('state'),email = request.data.get('email'),address = request.data.get('address'),phone = request.data.get('phone'))
         
         print("The instance is:",instance)
-        print("The new changes are:",request.POST['state'],request.POST['name'],request.POST['phone'],request.POST['email'],request.POST['address'])
+        # print("The new changes are:",request.POST['state'],request.POST['name'],request.POST['phone'],request.POST['email'],request.POST['address'])
 
         # instance['name'] = request.POST['name']
         # instance['phone'] = request.POST['phone']
@@ -215,5 +240,7 @@ def editProfile(request):
         # instance['email'] = request.POST['email']
         # instance.save()
         # context = instance
-        return redirect('/wholesaler/profile')
-
+        # return redirect('/wholesaler/profile')
+        return Response({"success": True}, status=status.HTTP_200_OK)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)

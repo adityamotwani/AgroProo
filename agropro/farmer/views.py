@@ -5,6 +5,11 @@ import pandas as pd
 import os
 import json
 from .extras.modelClass import CropPredict,CNN2
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from farmer.serializers import CropSerializer, FarmerSerializer
 
 
 Farmer = apps.get_model('home', 'Farmer')
@@ -63,78 +68,92 @@ print("Checking for Peas and Beans:",findYield(newData))
 
 
 # Create your views here.
+@api_view(['POST'])
 def prediction(request):
-    if request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         username=request.user.username
         username=username[:username.rfind('-')]
-        context={'username':request.user.username[:request.user.username.rfind('-')]}
+        # context={'username':request.user.username[:request.user.username.rfind('-')]}
         print(username,"Ho raha hai")
         instance = Farmer.objects.filter(username = request.user.username).values()[0]
 
-        if request.method == 'POST' :
+        # if request.method == 'POST' :
             # print('the user name is: ',request.POST.get('season'))
             # print('The file upoaded is: ',request.FILES['file'])
-            print('yes value found')
+        print('yes value found')
             # body_unicode = request.body.decode('utf-8')
             # body = json.loads(body_unicode)
-            print(request.POST['season'])
-            print(request.FILES['file'])
+        # print(request.POST['season'])
+        # print(request.FILES['file'])
             
-            
-            imageFile = request.FILES['file']
-            # print("The image is:",imageFile)
-            # answer = CNN_obj.prediction(imageFile)
-            answer = CNN_obj_3D.prediction(imageFile)
-            # answer = {'output':'Alluvial','percent':90}
-            print("Got the answer:",answer)
-            finalArray = []
+        imageFile = request.data['file']
+        # imageFile = request.FILES['file']
+        # print("The image is:",imageFile)
+        # answer = CNN_obj.prediction(imageFile)
+        answer = CNN_obj_3D.prediction(imageFile)
+        # answer = {'output':'Alluvial','percent':90}
+        print("Got the answer:",answer)
+        finalArray = []
 
-            for crop in soilDict[answer['output']]:
-                data = {
+        for crop in soilDict[answer['output']]:
+            data = {
                     'area':instance['area'],
                     'crop':crop,
                     'state':instance['state'],
-                    'season':request.POST.get('season')    
-                }
-                # production = Crop_obj.prediction(data) // Approach 1
-                production = findYield(data) # Approach 2
-                data['production'] = production
-                priceAssumption = findPrice(data)
-                print("Checking for prices:",priceAssumption)
-                if(priceAssumption != 0):
+                    'season':request.data.get('season')    
+            }
+            # production = Crop_obj.prediction(data) // Approach 1
+            production = findYield(data) # Approach 2
+            data['production'] = production
+            priceAssumption = findPrice(data)
+            print("Checking for prices:",priceAssumption)
+            if(priceAssumption != 0):
                     # data['price'] = priceAssumption[0]*10 // Approach 1
                     data['price'] = priceAssumption  # Approach 2
-                else:
+            else:
                     data['price'] = 0
-                print("Checking for production:",data['production'])
-                # data['production'] = data['production'][0]*10 // Approach 1
-                data['production'] = data['production']  # Approach 2
-                finalArray.append(data)
+            print("Checking for production:",data['production'])
+            # data['production'] = data['production'][0]*10 // Approach 1
+            data['production'] = data['production']  # Approach 2
+            finalArray.append(data)
             
-            print(finalArray)
-            return JsonResponse({'result':finalArray})
+        print(finalArray)
+        return Response({"success": True, 'data':finalArray}, status=status.HTTP_200_OK)
 
-        elif(instance['state'] is None or instance['area'] is None or instance['email'] is None or instance['address'] is None):
-            print('Checking for instance in prediction:',instance)
-            return redirect('/farmer/profile')
-        else:
-            return render(request,'predic.html',context)
-        print("The instance is:",instance)
-    else:
-        return redirect('/login')
+        # return JsonResponse({'result':finalArray})
+
+        # elif(instance['state'] is None or instance['area'] is None or instance['email'] is None or instance['address'] is None):
+        #     print('Checking for instance in prediction:',instance)
+        #     return redirect('/farmer/profile')
+        # else:
+        #     return render(request,'predic.html',context)
+        # print("The instance is:",instance)
+    except:
+        # return redirect('/login')
+        return Response({"success": False}, status=status.HTTP_200_OK)
 
 
-def notification(request):
-    if request.user.is_authenticated:
+@api_view(['POST'])
+def acceptNotif(request):
+    permission_classes = (IsAuthenticated,)
+    try:
         utype=request.user.username
         utype=utype[utype.rfind('-')+1:]
+        not_id=request.data.get('id')
+        notif_obj=list(Notification.objects.filter(id=not_id))[0]
+        notif_obj.accepted=True
+        notif_obj.save()
+        return Response({"success": True}, status=status.HTTP_200_OK)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
 
-        if request.method=='POST':
-            not_id=request.POST['id']
-            notif_obj=list(Notification.objects.filter(id=not_id))[0]
-            notif_obj.accepted=True
-            notif_obj.save()
-
+@api_view(['GET'])
+def notification(request):
+    permission_classes = (IsAuthenticated,)
+    try:
+        utype=request.user.username
+        utype=utype[utype.rfind('-')+1:]
         f_obj=list(Farmer.objects.filter(username=request.user.username))[0]
         notif_final=[]
         notif_temp=list(Notification.objects.all())
@@ -147,67 +166,66 @@ def notification(request):
                 notif_final[-1].append(i.accepted)
                 notif_final[-1].append("91"+i.wholesaler.phone)
                 notif_final[-1].append(i.id)
-        print(notif_final)
+        
 
         # Order By
-        ob=request.GET.get('orderby')
+        ob=request.data.get('orderby')
+        print("*******************************")
+        print(ob)
         if ob=="Pending":
+            print("Pending")
             notif_final=sorted(notif_final, key=lambda x: x[3])
         if ob=="Accepted":
-            notif_final=(sorted(notif_final, key=lambda x: x[3]))
-            notif_final=notif_final[::-1]
-            
+            print("Accepted")
+            notif_final=sorted(notif_final, key=lambda x: x[3], reverse=True)
+        print(notif_final)   
         context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')],"notif":notif_final,"n":3}
-        return render(request,'notif.html',context)
-    else:
-        return redirect('/login')
+        return Response({"success": True, "data": context}, status=status.HTTP_200_OK)
+        # return render(request,'notif.html',context)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+        # return redirect('/login')
     
-
+@api_view(['GET'])
 def profile(request):
-    if request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         username=request.user.username
         username=username[:username.rfind('-')]
         # context={'username':request.user.username[:request.user.username.rfind('-')]}
         # print("$$$$$$$$$$$$$$$",context,"Ho raha hai")
-        instance = Farmer.objects.filter(username = request.user.username).values()[0]
+        instance = Farmer.objects.get(username = request.user.username)
+        # .values()[0]
         print("Checking for instance: ",instance)
-        crops = Crop.objects.filter(farmer = instance['id'],available = True).values()
+        crops = Crop.objects.filter(farmer = instance.id,available = True)
+        # .values()
         
         print("The instance is:",instance)
         print("The crop instance  is:",crops)
-        if request.GET.get('newCrop'):
-            newCrop = True
-        else:
-            newCrop = False
-
-        if request.GET.get('itemDel'):
-            itemDel = True
-        else:
-            itemDel = False
 
         context = {
-            'instance':instance,
-            'crops':crops,
-            'newCrop':newCrop,
-            'itemDel':itemDel,
+            'instance':FarmerSerializer(instance).data,
+            'crops':(CropSerializer(crops,many=True)).data,
             'username':username
         }
-        print("Checkinf for variables:",context['newCrop'],context['itemDel'])
-        return render(request,'profile.html',context)
-    else:
-        return redirect('/')
+        return Response({"success": True, "data": context}, status=status.HTTP_200_OK)
+        # return render(request,'profile.html',context)
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+        # return redirect('/')
 
-
+@api_view(['PATCH'])
 def editProfile(request):
-    if request.method == 'POST' and request.user.is_authenticated:
+    permission_classes = (IsAuthenticated,)
+    try:
         username=request.user.username
         username=username[:username.rfind('-')]
         # context={'utype':utype,'username':request.user.username[:request.user.username.rfind('-')+1]}
         print(username,"Ho raha hai")
-        instance = Farmer.objects.filter(username = request.user.username).update(name = request.POST['name'],state = request.POST['state'],area = request.POST['area'],email = request.POST['email'],address = request.POST['address'],phone = request.POST['phone'])
+        instance = Farmer.objects.filter(username = request.user.username).update(name = request.data.get('name'),state = request.data.get('state'),area = request.data.get('area'),email = request.data.get('email'),address = request.data.get('address'),phone = request.data.get('phone'))
         
         print("The instance is:",instance)
-        print("The new changes are:",request.POST['state'],request.POST['name'],request.POST['phone'],request.POST['area'],request.POST['email'],request.POST['address'])
+        # print("The new changes are:",request.POST['state'],request.POST['name'],request.POST['phone'],request.POST['area'],request.POST['email'],request.POST['address'])
 
         # instance['name'] = request.POST['name']
         # instance['phone'] = request.POST['phone']
@@ -217,11 +235,17 @@ def editProfile(request):
         # instance['email'] = request.POST['email']
         # instance.save()
         # context = instance
-        return redirect('/farmer/profile')
 
+        return Response({"success": True}, status=status.HTTP_200_OK)
+        # return redirect('/farmer/profile')
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
 def setCrop(request):
-    if request.method == 'POST':
-        print(request.POST['name'],request.POST['quantity'],request.POST['price'],request.POST['tsp'])
+    permission_classes = (IsAuthenticated,)
+    try:
+        # print(request.POST['name'],request.POST['quantity'],request.POST['price'],request.POST['tsp'])
         
         username=request.user.username
         username=username[:username.rfind('-')]
@@ -231,17 +255,24 @@ def setCrop(request):
         
         print("The instance is:",instance)
         
-        newCrop = Crop.objects.create(farmer=Farmer(id=instance['id']), name = request.POST['name'],quantity = request.POST['quantity'],price = request.POST['price'],available = True)
+        newCrop = Crop.objects.create(farmer=Farmer(id=instance['id']), name = request.data.get('name'),quantity = request.data.get('quantity'),price = request.data.get('price'),available = True)
         print('The new crop is:',newCrop)
 
-        return redirect('/farmer/profile?newCrop=True')
+        return Response({"success": True}, status=status.HTTP_200_OK)
+        # return redirect('/farmer/profile?newCrop=True')
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
 
 
+@api_view(['DELETE'])
 def removeCrop(request,crop_id):
-    if request.method == "POST":
+    permission_classes = (IsAuthenticated,)
+    try:
         print("Yes reached here:",crop_id)
         instance = Crop.objects.filter(id = crop_id).delete()
         print("Checking for deletion:",instance)
-        return redirect('/farmer/profile?itemDel=True')
-    else:
-        return redirect('/farmer/profile')
+        return Response({"success": True}, status=status.HTTP_200_OK)
+        # return redirect('/farmer/profile?itemDel=True')
+    except:
+        return Response({"success": False}, status=status.HTTP_200_OK)
+        # return redirect('/farmer/profile')
